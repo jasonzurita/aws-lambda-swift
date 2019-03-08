@@ -19,15 +19,15 @@ public class Runtime {
     let awsLambdaRuntimeAPI: String
     let handlerName: String
     var handlers: [String: Handler]
-    
+
     public init() throws {
-        self.urlSession = URLSession.shared
-        self.handlers = [:]
-        
+        urlSession = URLSession.shared
+        handlers = [:]
+
         let environment = ProcessInfo.processInfo.environment
         guard let awsLambdaRuntimeAPI = environment["AWS_LAMBDA_RUNTIME_API"],
-           let handler = environment["_HANDLER"] else {
-              throw RuntimeError.missingEnvironmentVariables
+            let handler = environment["_HANDLER"] else {
+            throw RuntimeError.missingEnvironmentVariables
         }
 
         guard let periodIndex = handler.index(of: ".") else {
@@ -35,25 +35,43 @@ public class Runtime {
         }
 
         self.awsLambdaRuntimeAPI = awsLambdaRuntimeAPI
-        self.handlerName = String(handler[handler.index(after: periodIndex)...])
+        handlerName = String(handler[handler.index(after: periodIndex)...])
     }
-    
+
     func getNextInvocation() throws -> (eventData: Data, responseHeaderFields: [AnyHashable: Any]) {
         let getNextInvocationEndpoint = URL(string: "http://\(awsLambdaRuntimeAPI)/2018-06-01/runtime/invocation/next")!
         let (optData, optResponse, optError) = urlSession.synchronousDataTask(with: getNextInvocationEndpoint)
-        
+
+        if let d = optData {
+            log("data: \(String(data: d, encoding: .utf8) ?? "n/a")")
+        } else {
+            log("data: n/a")
+        }
+
+        if let r = optResponse {
+            log("response: \(r)")
+        } else {
+            log("response: n/a")
+        }
+
+        if let e = optError {
+            log("error: \(e.localizedDescription)")
+        } else {
+            log("error: n/a")
+        }
+
         guard optError == nil else {
             throw RuntimeError.endpointError(optError!.localizedDescription)
         }
-        
+
         guard let eventData = optData else {
             throw RuntimeError.missingData
         }
-        
+
         let httpResponse = optResponse as! HTTPURLResponse
         return (eventData: eventData, responseHeaderFields: httpResponse.allHeaderFields)
     }
-    
+
     func postInvocationResponse(for requestId: String, httpBody: Data) {
         let postInvocationResponseEndpoint = URL(string: "http://\(awsLambdaRuntimeAPI)/2018-06-01/runtime/invocation/\(requestId)/response")!
         var urlRequest = URLRequest(url: postInvocationResponseEndpoint)
@@ -84,12 +102,12 @@ public class Runtime {
         let handler = CodableHandler(handlerFunction: handlerFunction)
         handlers[name] = handler
     }
-    
+
     public func start() throws {
         while true {
             let (eventData, responseHeaderFields) = try getNextInvocation()
             counter += 1
-            log("Invocation-Counter: \(counter)")
+            log("InvocationCounter: \(counter)")
 
             guard let handler = handlers[handlerName] else {
                 throw RuntimeError.unknownLambdaHandler
@@ -111,3 +129,4 @@ public class Runtime {
         }
     }
 }
+
